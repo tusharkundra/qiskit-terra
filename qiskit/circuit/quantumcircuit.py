@@ -19,7 +19,7 @@ import warnings
 import numbers
 import multiprocessing as mp
 from collections import OrderedDict, defaultdict
-from typing import Union
+from typing import Union, Optional
 import numpy as np
 from qiskit.exceptions import QiskitError
 from qiskit.util import is_main_process
@@ -983,7 +983,7 @@ class QuantumCircuit:
         from qiskit.converters.circuit_to_gate import circuit_to_gate
         return circuit_to_gate(self, parameter_map, label=label)
 
-    def decompose(self):
+    def decompose(self, backend=None, optimize_using_open_pulse=False):
         """Call a decomposition pass on this circuit,
         to decompose one level (shallow decompose).
 
@@ -994,9 +994,84 @@ class QuantumCircuit:
         from qiskit.transpiler.passes.basis.decompose import Decompose
         from qiskit.converters.circuit_to_dag import circuit_to_dag
         from qiskit.converters.dag_to_circuit import dag_to_circuit
+        from qiskit.pulse import Schedule, Waveform, Play, DriveChannel, library, Gaussian, Drag
+
         pass_ = Decompose()
         decomposed_dag = pass_.run(circuit_to_dag(self))
-        return dag_to_circuit(decomposed_dag)
+
+        decomposed_circuit = dag_to_circuit(decomposed_dag)
+        if backend is not None and backend.configuration().open_pulse and optimize_using_open_pulse is True:
+            basis_gates = backend.configuration().basis_gates
+            instruction_schedule_map = backend.defaults().instruction_schedule_map
+            for instruction, qargs, cargs in decomposed_circuit.data:
+                # print(instruction.name)
+                if instruction.name.startswith('directrx'):
+                    if instruction.name not in basis_gates:
+                        basis_gates.append(instruction.name)
+                    if not instruction_schedule_map.has(instruction.name, qubits=[qargs[0].index]):
+                        partial_theta_rotation = float(instruction.name[len('directrx'):])
+                        xgate_instructions = instruction_schedule_map.get('x', qubits=[qargs[0].index]).instructions
+                        if len(xgate_instructions) == 1:
+                            xgate_waveform_array = xgate_instructions[0][1].pulse.samples \
+                                if isinstance(xgate_instructions[0][1].pulse, Waveform) \
+                                else xgate_instructions[0][1].pulse.get_waveform().samples
+
+                            if partial_theta_rotation > np.pi:
+                                partial_theta_rotation -= 2*np.pi
+
+                            directrx_waveform_array = xgate_waveform_array*(partial_theta_rotation/np.pi)
+                            direct_rx_schedule = Schedule(Play(Waveform(directrx_waveform_array), DriveChannel(qargs[0].index)), name=instruction.name)
+                            instruction_schedule_map.add(instruction.name, qubits=[qargs[0].index], schedule=direct_rx_schedule)
+
+                elif instruction.name.startswith('crgate'):
+                    if instruction.name not in basis_gates:
+                        basis_gates.append(instruction.name)
+
+                    if not instruction_schedule_map.has(instruction.name, qubits=[qargs[0].index, qargs[1].index]):
+                        theta = float(instruction.name[len('crgate'):])
+                        cx_instructions = instruction_schedule_map.get('cx', qubits=[qargs[0].index, qargs[1].index]).instructions
+
+                        # https://github.com/Qiskit/qiskit-terra/issues/5226
+                        # cx_instruction[5] corresponds to CR90p u0 (ControlChannel(0),)
+                        # cx_instruction[4] corresponds to CR90p d1 (DriveChannel(1),)
+                        crgate_control_instruction_pulse = cx_instructions[5][1]
+                        crgate_drive_instruction_pulse = cx_instructions[4][1]
+                        crgate_control_waveform_array = crgate_control_instruction_pulse.pulse.samples \
+                            if isinstance(crgate_control_instruction_pulse.pulse, Waveform) \
+                            else crgate_control_instruction_pulse.pulse.get_waveform().samples
+                        crgate_drive_waveform_array = crgate_drive_instruction_pulse.pulse.samples \
+                            if isinstance(crgate_drive_instruction_pulse.pulse, Waveform) \
+                            else crgate_drive_instruction_pulse.pulse.get_waveform().samples
+                        inverted_pulse_schedule = False
+                        if theta < 0:
+                            inverted_pulse_schedule = True
+                            theta = -1 * theta
+                        if theta > 2 * np.pi:
+                            theta -= 2 * np.pi
+                        crgate_control_waveform_array_scaled = crgate_control_waveform_array * (theta / (np.pi / 2))
+                        crgate_drive_waveform_array_scaled = crgate_drive_waveform_array * (theta / (np.pi / 2))
+                        positive_schedule = Schedule(
+                            Play(Waveform(crgate_drive_waveform_array_scaled), crgate_drive_instruction_pulse.channels[0]) |
+                            Play(Waveform(crgate_control_waveform_array_scaled), crgate_control_instruction_pulse.channels[0]),
+                            name=instruction.name)
+                        inverted_schedule = Schedule(
+                            Play(Waveform(-1 * crgate_drive_waveform_array_scaled), crgate_drive_instruction_pulse.channels[0]) |
+                            Play(Waveform(-1 * crgate_control_waveform_array_scaled), crgate_control_instruction_pulse.channels[0]),
+                            name=instruction.name)
+                        if inverted_pulse_schedule:
+                            schedule = inverted_schedule
+                            schedule |= instruction_schedule_map.get('x', qubits=[0]) << schedule.duration
+                            schedule |= positive_schedule << schedule.duration
+                        else:
+                            schedule = positive_schedule
+                            schedule |= instruction_schedule_map.get('x', qubits=[0]) << schedule.duration
+                            schedule |= inverted_schedule << schedule.duration
+                        instruction_schedule_map.add(instruction.name, qubits=[qargs[0].index, qargs[1].index], schedule=schedule)
+                elif instruction.name == 'open_cx':
+                    if instruction.name not in basis_gates:
+                        basis_gates.append(instruction.name)
+
+        return decomposed_circuit
 
     def _check_compatible_regs(self, rhs):
         """Raise exception if the circuits are defined on incompatible registers"""
@@ -2296,6 +2371,23 @@ class QuantumCircuit:
         """Apply :class:`~qiskit.circuit.library.CXGate`."""
         from .library.standard_gates.x import CXGate
         return self.append(CXGate(label=label, ctrl_state=ctrl_state),
+                           [control_qubit, target_qubit], [])
+
+    def directrx(self, theta, qubit, label=None):  # pylint: disable=invalid-name
+        """Apply :class:`~qiskit.circuit.library.DirectRXGate`."""
+        from .library.standard_gates.directrxgate import DirectRXGate
+        return self.append(DirectRXGate(theta, label=label), [qubit], [])
+
+    def directcr(self, theta, control_qubit, target_qubit, label=None, ctrl_state=None):
+        """Apply :class:`~qiskit.circuit.library.CRGate`."""
+        from .library.standard_gates.cr import CRGate
+        return self.append(CRGate(theta, label=label),
+                           [control_qubit, target_qubit], [])
+
+    def directzzgate(self, theta, control_qubit, target_qubit, label=None, ctrl_state=None):
+        """Apply :class:`~qiskit.circuit.library.DirectZZGate`."""
+        from .library.standard_gates.directzzgate import DirectZZGate
+        return self.append(DirectZZGate(theta, label=label),
                            [control_qubit, target_qubit], [])
 
     def cnot(self, control_qubit, target_qubit, label=None, ctrl_state=None):

@@ -63,6 +63,7 @@ from . import (
     RYYGate,
     ZGate,
     CZGate,
+    DirectRXGate,
 )
 
 

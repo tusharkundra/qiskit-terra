@@ -79,10 +79,12 @@ class XGate(Gate):
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
         from .u3 import U3Gate
+        from .directrxgate import DirectRXGate
         q = QuantumRegister(1, 'q')
         qc = QuantumCircuit(q, name=self.name)
         rules = [
-            (U3Gate(pi, 0, pi), [q[0]], [])
+            # (U3Gate(pi, 0, pi), [q[0]], [])
+            (DirectRXGate(pi), [q[0]], [])
         ]
         for instr, qargs, cargs in rules:
             qc._append(instr, qargs, cargs)
@@ -180,6 +182,36 @@ class CXGate(ControlledGate):
         """Create new CX gate."""
         super().__init__('cx', 2, [], num_ctrl_qubits=1, label=label,
                          ctrl_state=ctrl_state, base_gate=XGate())
+
+    def _define(self):
+        # super()._define()
+        """
+        gate cu3(theta,phi,lambda) c, t
+        { u1(pi/2) t;
+          directrx(pi) t;
+          directrx(pi/2) t;
+          cr(pi/2) c, t;
+        }
+        """
+        # pylint: disable=cyclic-import
+        from qiskit.circuit.quantumcircuit import QuantumCircuit
+        from .u1 import U1Gate
+        from .directrxgate import DirectRXGate
+        from .cr import CRGate
+
+        q = QuantumRegister(2, 'q')
+        qc = QuantumCircuit(q, name=self.name)
+        rules = [
+            (DirectRXGate(pi), [q[0]], []),
+            (DirectRXGate(pi/2), [q[1]], []),
+            (CRGate(pi/4), [q[0], q[1]], []),
+            (DirectRXGate(pi), [q[0]], []),
+            (CRGate(-pi/4), [q[0], q[1]], []),
+        ]
+        for instr, qargs, cargs in rules:
+            qc._append(instr, qargs, cargs)
+
+        self.definition = qc
 
     def control(self, num_ctrl_qubits=1, label=None, ctrl_state=None):
         """Return a controlled-X gate with more control lines.
@@ -422,7 +454,7 @@ class C3XGate(ControlledGate):
         [1] Barenco et al., 1995. https://arxiv.org/pdf/quant-ph/9503016.pdf
     """
 
-    def __init__(self, angle=numpy.pi/4, label=None, ctrl_state=None):
+    def __init__(self, angle=numpy.pi / 4, label=None, ctrl_state=None):
         """Create a new 3-qubit controlled X gate.
 
         Args:
