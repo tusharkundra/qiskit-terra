@@ -94,4 +94,8 @@ from .x import MCXGate, MCXGrayCode, MCXRecursive, MCXVChain
 from .y import YGate, CYGate
 from .z import ZGate, CZGate
 
+from .directrxgate import DirectRXGate
+from .cr import CRGate
+from .directzzgate import DirectZZGate
+
 from .multi_control_rotation_gates import mcrx, mcry, mcrz

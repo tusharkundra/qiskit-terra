@@ -78,11 +78,13 @@ class XGate(Gate):
         """
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
+        from .directrxgate import DirectRXGate
         from .u3 import U3Gate
         q = QuantumRegister(1, 'q')
         qc = QuantumCircuit(q, name=self.name)
         rules = [
-            (U3Gate(pi, 0, pi), [q[0]], [])
+            # (U3Gate(pi, 0, pi), [q[0]], [])
+            (DirectRXGate(pi), [q[0]], [])
         ]
         for instr, qargs, cargs in rules:
             qc._append(instr, qargs, cargs)
@@ -180,6 +182,38 @@ class CXGate(ControlledGate):
         """Create new CX gate."""
         super().__init__('cx', 2, [], num_ctrl_qubits=1, label=label,
                          ctrl_state=ctrl_state, base_gate=XGate())
+
+    def _define(self):
+        # super()._define()
+        """
+        gate cx(theta,phi,lambda) c, t
+        { directrx(pi) t;
+          directrx(pi/2) t;
+          directcr(pi/4) c, t;
+          directrx(pi/2) t;
+          directcr(-pi/4) c, t;
+        }
+        """
+        # pylint: disable=cyclic-import
+        from qiskit.circuit.quantumcircuit import QuantumCircuit
+
+        from .cr import CRGate
+        from .directrxgate import DirectRXGate
+        from .u1 import U1Gate
+
+        q = QuantumRegister(2, 'q')
+        qc = QuantumCircuit(q, name=self.name)
+        rules = [
+            (DirectRXGate(pi), [q[0]], []),
+            (DirectRXGate(pi/2), [q[1]], []),
+            (CRGate(pi/4), [q[0], q[1]], []),
+            (DirectRXGate(pi), [q[0]], []),
+            (CRGate(-pi/4), [q[0], q[1]], []),
+        ]
+        for instr, qargs, cargs in rules:
+            qc._append(instr, qargs, cargs)
+
+        self.definition = qc
 
     def control(self, num_ctrl_qubits=1, label=None, ctrl_state=None):
         """Return a controlled-X gate with more control lines.

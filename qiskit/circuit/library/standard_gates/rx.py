@@ -55,10 +55,12 @@ class RXGate(Gate):
         # pylint: disable=cyclic-import
         from qiskit.circuit.quantumcircuit import QuantumCircuit
         from .r import RGate
+        from .directrxgate import DirectRXGate
         q = QuantumRegister(1, 'q')
         qc = QuantumCircuit(q, name=self.name)
         rules = [
-            (RGate(self.params[0], 0), [q[0]], [])
+            # (RGate(self.params[0], 0), [q[0]], [])
+            (DirectRXGate(self.params[0]), [q[0]], [])
         ]
         for instr, qargs, cargs in rules:
             qc._append(instr, qargs, cargs)
