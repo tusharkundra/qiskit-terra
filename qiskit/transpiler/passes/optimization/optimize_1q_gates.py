@@ -55,12 +55,9 @@ class Optimize1qGates(TransformationPass):
         Raises:
             TranspilerError: if YZY and ZYZ angles do not give same rotation matrix.
         """
-        runs = dag.collect_runs(["u1", "u2", "u3"],  prefixlist=["directrx"])
+        runs = dag.collect_runs(["u1", "u2", "u3"])
         runs = _split_runs_on_parameters(runs)
         for run in runs:
-            if len(run) == 1:
-                continue
-
             right_name = "u1"
             right_parameters = (0, 0, 0)  # (theta, phi, lambda)
             right_global_phase = 0
@@ -68,7 +65,7 @@ class Optimize1qGates(TransformationPass):
                 left_name = current_node.name
                 if (current_node.condition is not None
                         or len(current_node.qargs) != 1
-                        or (left_name not in ["u1", "u2", "u3", "id"]) and not left_name.startswith("directrx")):
+                        or left_name not in ["u1", "u2", "u3", "id"]):
                     raise TranspilerError("internal error")
                 if left_name == "u1":
                     left_parameters = (0, 0, current_node.op.params[0])
@@ -77,8 +74,6 @@ class Optimize1qGates(TransformationPass):
                                        current_node.op.params[1])
                 elif left_name == "u3":
                     left_parameters = tuple(current_node.op.params)
-                elif left_name.startswith("directrx"):
-                    left_parameters = (current_node.op.params[0], -np.pi/2, np.pi/2)
                 else:
                     left_name = "u1"  # replace id with u1
                     left_parameters = (0, 0, 0)
@@ -103,12 +98,12 @@ class Optimize1qGates(TransformationPass):
                     right_name = "u2"
                     right_parameters = (np.pi / 2, left_parameters[1],
                                         right_parameters[2] + left_parameters[2])
-                elif name_tuple[0] == "u1" and name_tuple[1] in ["u3", "directrx"]:
+                elif name_tuple == ("u1", "u3"):
                     # u1(lambda1) * u3(theta2, phi2, lambda2) =
                     #     u3(theta2, phi2 + lambda1, lambda2)
                     right_parameters = (right_parameters[0], right_parameters[1] +
                                         left_parameters[2], right_parameters[2])
-                elif name_tuple[1] == "u1" or name_tuple[0] in ["u3", "directrx"]:
+                elif name_tuple == ("u3", "u1"):
                     # u3(theta1, phi1, lambda1) * u1(lambda2) =
                     #     u3(theta1, phi1, lambda1 + lambda2)
                     right_name = "u3"

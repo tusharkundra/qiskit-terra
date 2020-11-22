@@ -1384,7 +1384,7 @@ class DAGCircuit:
         first_layer = [x._node_id for x in self.input_map.values()]
         return iter(rx.layers(self._multi_graph, first_layer))
 
-    def collect_runs(self, namelist, prefixlist=[]):
+    def collect_runs(self, namelist):
         """Return a set of non-conditional runs of "op" nodes with the given names.
 
         For example, "... h q[0]; cx q[0],q[1]; cx q[0],q[1]; h q[1]; .."
@@ -1404,20 +1404,19 @@ class DAGCircuit:
         topo_ops = list(self.topological_op_nodes())
         nodes_seen = dict(zip(topo_ops, [False] * len(topo_ops)))
         for node in topo_ops:
-            if node.name in namelist or any([node.name.startswith(p) for p in prefixlist]):
-                if node.condition is None and not nodes_seen[node]:
-                    group = [node]
-                    nodes_seen[node] = True
-                    s = self._multi_graph.successors(node._node_id)
-                    while len(s) == 1 and \
-                            s[0].type == "op" and \
-                            (s[0].name in namelist or any([s[0].name.startswith(p) for p in prefixlist])) and \
-                            s[0].condition is None:
-                        group.append(s[0])
-                        nodes_seen[s[0]] = True
-                        s = self._multi_graph.successors(s[0]._node_id)
-                    if len(group) >= 1:
-                        group_list.append(tuple(group))
+            if node.name in namelist and not nodes_seen[node]:
+                group = [node]
+                nodes_seen[node] = True
+                s = self._multi_graph.successors(node._node_id)
+                while len(s) == 1 and \
+                        s[0].type == "op" and \
+                        s[0].name in namelist and \
+                        s[0].condition is None:
+                    group.append(s[0])
+                    nodes_seen[s[0]] = True
+                    s = self._multi_graph.successors(s[0]._node_id)
+                if len(group) >= 1:
+                    group_list.append(tuple(group))
         return set(group_list)
 
     def nodes_on_wire(self, wire, only_ops=False):
