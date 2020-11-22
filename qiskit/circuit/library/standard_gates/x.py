@@ -186,11 +186,12 @@ class CXGate(ControlledGate):
     def _define(self):
         # super()._define()
         """
-        gate cu3(theta,phi,lambda) c, t
-        { u1(pi/2) t;
-          directrx(pi) t;
+        gate cx(theta,phi,lambda) c, t
+        { directrx(pi) t;
           directrx(pi/2) t;
-          cr(pi/2) c, t;
+          directcr(pi/4) c, t;
+          directrx(pi/2) t;
+          directcr(-pi/4) c, t;
         }
         """
         # pylint: disable=cyclic-import

@@ -1005,32 +1005,24 @@ class QuantumCircuit:
             instruction_schedule_map = backend.defaults().instruction_schedule_map
             for instruction, qargs, cargs in decomposed_circuit.data:
                 # print(instruction.name)
+                if instruction.name not in basis_gates:
+                    basis_gates.append(instruction.name)
                 if instruction.name.startswith('directrx'):
-                    if instruction.name not in basis_gates:
-                        basis_gates.append(instruction.name)
                     if not instruction_schedule_map.has(instruction.name, qubits=[qargs[0].index]):
                         partial_theta_rotation = float(instruction.name[len('directrx'):])
                         xgate_instructions = instruction_schedule_map.get('x', qubits=[qargs[0].index]).instructions
-                        if len(xgate_instructions) == 1:
-                            xgate_waveform_array = xgate_instructions[0][1].pulse.samples \
-                                if isinstance(xgate_instructions[0][1].pulse, Waveform) \
-                                else xgate_instructions[0][1].pulse.get_waveform().samples
-
-                            if partial_theta_rotation > np.pi:
-                                partial_theta_rotation -= 2*np.pi
-
-                            directrx_waveform_array = xgate_waveform_array*(partial_theta_rotation/np.pi)
-                            direct_rx_schedule = Schedule(Play(Waveform(directrx_waveform_array), DriveChannel(qargs[0].index)), name=instruction.name)
-                            instruction_schedule_map.add(instruction.name, qubits=[qargs[0].index], schedule=direct_rx_schedule)
-
+                        xgate_waveform_array = xgate_instructions[0][1].pulse.samples \
+                            if isinstance(xgate_instructions[0][1].pulse, Waveform) \
+                            else xgate_instructions[0][1].pulse.get_waveform().samples
+                        if partial_theta_rotation > np.pi:
+                            partial_theta_rotation = partial_theta_rotation - 2*np.pi
+                        directrx_waveform_array = xgate_waveform_array*(partial_theta_rotation/np.pi)
+                        direct_rx_schedule = Schedule(Play(Waveform(directrx_waveform_array), DriveChannel(qargs[0].index)), name=instruction.name)
+                        instruction_schedule_map.add(instruction.name, qubits=[qargs[0].index], schedule=direct_rx_schedule)
                 elif instruction.name.startswith('crgate'):
-                    if instruction.name not in basis_gates:
-                        basis_gates.append(instruction.name)
-
                     if not instruction_schedule_map.has(instruction.name, qubits=[qargs[0].index, qargs[1].index]):
                         theta = float(instruction.name[len('crgate'):])
                         cx_instructions = instruction_schedule_map.get('cx', qubits=[qargs[0].index, qargs[1].index]).instructions
-
                         # https://github.com/Qiskit/qiskit-terra/issues/5226
                         # cx_instruction[5] corresponds to CR90p u0 (ControlChannel(0),)
                         # cx_instruction[4] corresponds to CR90p d1 (DriveChannel(1),)
@@ -1046,10 +1038,9 @@ class QuantumCircuit:
                         if theta < 0:
                             inverted_pulse_schedule = True
                             theta = -1 * theta
-                        if theta > 2 * np.pi:
-                            theta -= 2 * np.pi
                         crgate_control_waveform_array_scaled = crgate_control_waveform_array * (theta / (np.pi / 2))
                         crgate_drive_waveform_array_scaled = crgate_drive_waveform_array * (theta / (np.pi / 2))
+                        # https://qiskit.org/documentation/tutorials/circuits_advanced/07_building_pulse_schedules.html?highlight=pulse
                         positive_schedule = Schedule(
                             Play(Waveform(crgate_drive_waveform_array_scaled), crgate_drive_instruction_pulse.channels[0]) |
                             Play(Waveform(crgate_control_waveform_array_scaled), crgate_control_instruction_pulse.channels[0]),
@@ -1067,9 +1058,6 @@ class QuantumCircuit:
                             schedule |= instruction_schedule_map.get('x', qubits=[0]) << schedule.duration
                             schedule |= inverted_schedule << schedule.duration
                         instruction_schedule_map.add(instruction.name, qubits=[qargs[0].index, qargs[1].index], schedule=schedule)
-                elif instruction.name == 'open_cx':
-                    if instruction.name not in basis_gates:
-                        basis_gates.append(instruction.name)
 
         return decomposed_circuit
 
