@@ -1041,6 +1041,7 @@ class QuantumCircuit:
                         crgate_control_waveform_array_scaled = crgate_control_waveform_array * (theta / (np.pi / 2))
                         crgate_drive_waveform_array_scaled = crgate_drive_waveform_array * (theta / (np.pi / 2))
                         # https://qiskit.org/documentation/tutorials/circuits_advanced/07_building_pulse_schedules.html?highlight=pulse
+                        # https: // arxiv.org / pdf / 2004.06755.pdf
                         positive_schedule = Schedule(
                             Play(Waveform(crgate_drive_waveform_array_scaled), crgate_drive_instruction_pulse.channels[0]) |
                             Play(Waveform(crgate_control_waveform_array_scaled), crgate_control_instruction_pulse.channels[0]),
